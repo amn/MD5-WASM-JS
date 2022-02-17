@@ -1,4 +1,4 @@
-export const { module: WASM_module, instance: WASM_default_module_instance } = await WebAssembly.instantiateStreaming(fetch("MD5.wasm")); /// Load the WASM module _and_ create a [default] instance (for convenience, since it can be used in but the most complex application scenarios)
+export const { module: WASM_module, instance: WASM_default_module_instance } = await WebAssembly.instantiateStreaming(fetch(new URL("MD5.wasm", import.meta.url))); /// Load the WASM module _and_ create a [default] instance (for convenience, since it can be used in but the most complex application scenarios)
 
 const reserved_header_size = 1024; /// We reserve some memory [of a module instance]; this isn't strictly necessary
 
