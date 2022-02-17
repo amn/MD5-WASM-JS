@@ -16,6 +16,7 @@ export async function digest(chunks, { instance = WASM_default_module_instance }
 	const { memory, pad, start, update } = instance.exports; /// WASM instance memory and the actual "driver" routines for computation
 	let input_memory_view = new Uint8Array(memory.buffer, o_input); /// Chunks of data are written sequentially for processing to this mapped portion of WASM instance memory
 	start(o_context); /// Initialization is [expected to be] done by the WASM module for every object to be digested
+	let n_bytes_to_pad = 0; /// This amount of bytes will be padded in accordance with the MD5 algorithm; per the algorithm, padding is always done, even when there are zero bytes to pad
 	for await(const chunk of chunks) {
 		const n_extra_memory_bytes_required = chunk.byteLength + 512 - (memory.buffer.byteLength - o_input); /// 512 bytes extra for unaligned [final] chunk that will be padded
 		if(n_extra_memory_bytes_required > 0) { /// Do we need to expand instance memory to accomodate processing of this chunk?
@@ -23,7 +24,12 @@ export async function digest(chunks, { instance = WASM_default_module_instance }
 			input_memory_view = new Uint8Array(memory.buffer, o_input); /// A view has the same size it was created with, so when memory is expanded, another view must be created with the new expanded length; additionally, after memory is expanded it may refer to an entirely different buffer so the old buffer may be invalid
 		}
 		input_memory_view.set(new Uint8Array(chunk)); /// Copy chunk into WASM module instance memory to make the chunk accessible by WASM; unfortunately, no zero-copy API(s) available to leverage (as of now) :/
-		update(o_input, (chunk.byteLength % 512) ? pad(o_input, chunk.byteLength, o_context) : chunk.byteLength, o_context); /// Update MD5 digest using [copied] chunk data; a chunk of size not aligned on 512 bytes is padded as per MD5 specification; if it isn't the _last_ chunk of the stream (the loop exits), the effect of the call is not defined
+		if(chunk.byteLength % 512) { /// We assume an unaligned chunk is the _last_ chunk in the series
+			n_bytes_to_pad = chunk.byteLength;
+			break;
+		}
+		update(o_input, chunk.byteLength, o_context); /// Update MD5 digest using [copied] chunk data
 	}
+	update(o_input, pad(o_input, n_bytes_to_pad, o_context), o_context);
 	return new DataView(memory.buffer, o_context, 16); /// Starting at `context.offset` bytes of instance's memory there's 16 bytes that are the accumulated digest
 }
