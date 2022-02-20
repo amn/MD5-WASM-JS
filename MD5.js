@@ -11,13 +11,14 @@ const reserved_header_size = 1024; /// We reserve some memory [of a module insta
 	@param {WebAssembly.Instance} [instance] An instance of the MD5 WASM module to utilize; WASM routines are always accessible on and are called using a such instance; an instance, by implication, defines the contigous range of available memory that may be used, in this case when computing a digest; to do computation of multiple digests in parallel, different instances currently must be employed so that different memory is used by each; the underlying WASM module _does_ allow for parallel computation of multiple digests using a single module instance, through being able to address different regions of the same instance memory for each computation; _this_ procedure, however, currently does not manage instance memory in a way where such parallel computation using a single instance, so computations done in parallel by calls to this [asynchronous] procedure must use different WASM module instances, or the effect of such parallel computation, is undefined
 	@returns {DataView} The 128 bits of MD5 computation result; returned as a view mapping the result in the buffer where it was originally computed
 */
-export async function digest(chunks, { instance = WASM_default_module_instance } = {}) {
+export async function digest(chunks, { instance = WASM_default_module_instance, signal } = {}) {
 	const o_context = reserved_header_size, o_input = o_context + 24; /// Establish where in instance memory we will be accessing what (partially mandated by the WASM module)
 	const { memory, pad, start, update } = instance.exports; /// WASM instance memory and the actual "driver" routines for computation
 	let input_memory_view = new Uint8Array(memory.buffer, o_input); /// Chunks of data are written sequentially for processing to this mapped portion of WASM instance memory
 	start(o_context); /// Initialization is [expected to be] done by the WASM module for every object to be digested
 	let n_bytes_to_pad = 0; /// This amount of bytes will be padded in accordance with the MD5 algorithm; per the algorithm, padding is always done, even when there are zero bytes to pad
 	for await(const chunk of chunks) {
+		if(signal?.aborted) throw new DOMException(signal.reason, "AbortError");
 		const n_extra_memory_bytes_required = chunk.byteLength + 64 - (memory.buffer.byteLength - o_input); /// 64 bytes extra for unaligned [final] chunk that will be padded
 		if(n_extra_memory_bytes_required > 0) { /// Do we need to expand instance memory to accomodate processing of this chunk?
 			memory.grow(Math.ceil(n_extra_memory_bytes_required / 65536)); /// Memory is grown by a number of 64KiB blocks
