@@ -6,3 +6,5 @@ all: $(DESTDIR)MD5.js
 
 $(DESTDIR)MD5.js: $(DESTDIR)%: $(SRCDIR)%
 	$(INSTALL_DATA)
+
+include $(SRCDIR)wasm-module/makefile

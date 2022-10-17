@@ -2,11 +2,9 @@ This is an ECMAScript module for MD5 computation using WebAssembly.
 
 In simpler terms: it's a JavaScript file that allows you to compute [MD5](http://en.wikipedia.org/wiki/MD5) digests in your Web browser, "very fast".
 
-The WebAssembly module is _not_ included! You can obtain one at http://github.com/amn/MD5.wasm
-
 # Requirements
 
-This module depends on a WebAssembly (WASM) module for actual MD5 computation. [A repository tracking a suitable implementation, is available](http://github.com/amn/MD5.wasm). By itself, this module is just a "frontend" to the former. The WASM module is *not* distributed with this module because the two only depend on a shared common *interface* -- as long as the set of elements exported by the WASM module, remains compatible to the degree they may be used by this module, the WASM module implementation is free to change. In simpler terms, the two modules are *loosely* coupled. For now.
+This module depends on a WebAssembly (WASM) module for actual MD5 computation. [A repository tracking a suitable implementation, is available](http://github.com/amn/MD5.wasm) and is tracked by this repository automatically. By itself, this module is just a "frontend" to the former.
 
 Obviously, your script host that will load this module, is expected to contain a WebAssembly platform.
 
