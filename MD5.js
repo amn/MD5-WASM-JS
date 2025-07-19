@@ -1,3 +1,5 @@
+export const aligned_chunk_size = size => ((size & ~(64 - 1)) || 64); /// Round down `size` to the nearest multiple of 64 that is larger than or equal to 64; see `digest` below
+
 export const WASM_module = await WebAssembly.compileStreaming(fetch(new URL("MD5.wasm", import.meta.url))); /// The module is loaded from where this module is (a kind of incentive to keep the two together)
 
 const reserved_header_size = 1024; /// We reserve some memory [of a module instance]; this isn't strictly necessary
@@ -38,6 +40,36 @@ export async function digest(chunks, { instance, signal } = {}) {
 	}
 	finally {
 		WASM_module_instance_pool.release(instance);
+	}
+}
+
+/**
+	A class of workers for offloading the digesting to.
+*/
+export class Worker extends globalThis.Worker {
+	constructor() {
+		super(new URL("MD5.worker.js", import.meta.url), { type: "module" });
+	}
+	/**
+	 * Invoke the MD5 computation procedure on a dedicated thread.
+	 *
+	 * This "offloads" the call to the worker context (with its own script execution thread), in other words this is a form of a remote procedure call (RPC).
+	 *
+	 * @param {Iterable<ArrayBuffer>|AsyncIterable<ArrayBuffer>} input The data to compute the digest for; the object _must_ be transferrable](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects); effectively passed as-is to the `digest` procedure in this module -- requirements that apply for the `chunks` parameter to the latter, also apply to this parameter
+	 * @param {AbortSignal} [signal} A signal that may be used to abort the digesting process
+	 */
+	async digest(input, { signal } = {}) {
+		const channel = new MessageChannel(); /// Create a bi-directional channel to use as RPC for the worker to communicate back the result of digesting the blob
+		const result_promise = new Promise(resolve => { channel.port1.onmessage = ev => resolve(ev.data); }); /// Create the promise that resolves with the result
+		this.postMessage(input, [ input, channel.port2 ]); /// RPC-call the `digest` procedure -- a worker is expected to execute it
+		const result = await Promise.race([ /// Wait for the return value from the RPC call (which happens in another thread) or abort if signalled
+			result_promise,
+			new Promise((_, reject) => {
+				signal?.throwIfAborted(); /// Reject immediately if aborted already
+				signal?.addEventListener("abort", ev => reject(ev.target.reason), { once: true }); /// Otherwise set up to reject when aborted
+			})
+		]);
+		return result;
 	}
 }
 
