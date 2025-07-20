@@ -55,6 +55,8 @@ export class Worker extends globalThis.Worker {
 	 *
 	 * This "offloads" the call to the worker context (with its own script execution thread), in other words this is a form of a remote procedure call (RPC).
 	 *
+	 * The `transferable` method on the worker MUST be defined for this method to work. The former is expected to return the set of [transferable](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects) objects related to the `input` argument passed by message to the worker as part of RPC mechanism. Depending on the type of `input`, a set of transferables may _have to be_ returned -- `ReadableStream` objects, for example, are _not_ clonable but permit and thus mandate transferring (so returning `[]` won't do), meaning the set of transferable objects that are to be returned by the `transferables` method passed a `ReadableStream` as `input`, must be `[ input ]`. Conversely, `Blob` objects (for the sake of example ignoring the fact that the `digest` routine cannot work with `Blob` for input since iteration [of chunks] isn't defined for the latter type), _are_ clonable but _not_ transferable -- the `transferables` method _must_ return an empty set (`[]`) for these. Requiring a `transferables` method allows this method to not have to assume a given set of types of input it may support, deferring instead to the caller to effectively define _how_ to pass input by message. Ideally, the native message passing API would encapsulate these details without needing the developer to be helping out, but that is a whole different can of worms. See also https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm.
+	 *
 	 * @param {Iterable<ArrayBuffer>|AsyncIterable<ArrayBuffer>} input The data to compute the digest for; the object _must_ be transferrable](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects); effectively passed as-is to the `digest` procedure in this module -- requirements that apply for the `chunks` parameter to the latter, also apply to this parameter
 	 * @param {AbortSignal} [signal} A signal that may be used to abort the digesting process
 	 */
@@ -64,7 +66,7 @@ export class Worker extends globalThis.Worker {
 		const result_promise = new Promise((resolve, reject) => { channel.port1.onmessage = ev => (Error.isError(ev.data) ? reject : resolve)(ev.data); }); /// Create the promise that resolves with the result or rejects with the error (if the RPC threw an exception)
 		signal?.addEventListener("abort", ev => channel.port1.postMessage(ev.target.reason));
 		signal = !!signal; /// We cannot send the signal with `postMessage` as it's neither clonable nor transferable, so we send a corresponding "make the call abortable" flag which the message receiver is expected to use to allow us to effectively abort the [potentially lengthy] RPC
-		this.postMessage({ input, signal }, [ input, channel.port2 ]); /// RPC-call the `digest` procedure -- a worker is expected to execute it
+		this.postMessage({ input, signal }, [ ...this.transferables(input), channel.port2 ]); /// RPC-call the `digest` procedure -- a worker is expected to execute it
 		return result_promise;
 	}
 }
