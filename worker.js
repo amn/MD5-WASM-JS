@@ -11,8 +11,13 @@ import { digest } from "./MD5.js";
 Object.assign(globalThis, {
 	async onmessage(ev) { /// An event handler that implements a remote procedure call (RPC) for `digest`; invoked by the UA automatically with every call to the worker's `postMessage` method (e.g. in a page context)
 		const [ port ] = ev.ports; /// The port is on this end of a 2-port channel created to transfer the return value of the RPC
+		const signal = ev.data.signal ? (() => {
+			const controller = new AbortController();
+			port.onmessage = ev => controller.abort(ev.data);
+			return controller.signal;
+		})() : undefined; /// If the caller expressed use of signalling to abort the `digest` call, we create an equivalent signal to allow them to do so
 		try {
-			port.postMessage(await digest(ev.data)); /// Compute the digest and return it (the party that sent the RPC message will receive the value on the other port of the channel)
+			port.postMessage(await digest(ev.data.input, { signal })); /// Compute the digest and return it (the party that sent the RPC message will receive the value on the other port of the channel)
 		}
 		catch(error) {
 			port.postMessage(error); /// If an error occurred, we need to communicate it to the caller as well

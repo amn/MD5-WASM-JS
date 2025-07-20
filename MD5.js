@@ -59,17 +59,13 @@ export class Worker extends globalThis.Worker {
 	 * @param {AbortSignal} [signal} A signal that may be used to abort the digesting process
 	 */
 	async digest(input, { signal } = {}) {
+		signal?.throwIfAborted(); /// Reject immediately if aborted already, and to ensure we can expect an "abort" event otherwise; see [bullet point 4 in the list of steps specifying the `fetch` method of the Fetch API](https://fetch.spec.whatwg.org/#fetch-method) which sets a kind of precedent for how to deal with cases of the well-known `signal` argument being in the "aborted" state already at the time of the procedure call wherein it is passed
 		const channel = new MessageChannel(); /// Create a bi-directional channel to use as RPC for the worker to communicate back the result of digesting the blob
 		const result_promise = new Promise((resolve, reject) => { channel.port1.onmessage = ev => (Error.isError(ev.data) ? reject : resolve)(ev.data); }); /// Create the promise that resolves with the result or rejects with the error (if the RPC threw an exception)
-		this.postMessage(input, [ input, channel.port2 ]); /// RPC-call the `digest` procedure -- a worker is expected to execute it
-		const result = await Promise.race([ /// Wait for the return value from the RPC call (which happens in another thread) or abort if signalled
-			result_promise,
-			new Promise((_, reject) => {
-				signal?.throwIfAborted(); /// Reject immediately if aborted already
-				signal?.addEventListener("abort", ev => reject(ev.target.reason), { once: true }); /// Otherwise set up to reject when aborted
-			})
-		]);
-		return result;
+		signal?.addEventListener("abort", ev => channel.port1.postMessage(ev.target.reason));
+		signal = !!signal; /// We cannot send the signal with `postMessage` as it's neither clonable nor transferable, so we send a corresponding "make the call abortable" flag which the message receiver is expected to use to allow us to effectively abort the [potentially lengthy] RPC
+		this.postMessage({ input, signal }, [ input, channel.port2 ]); /// RPC-call the `digest` procedure -- a worker is expected to execute it
+		return result_promise;
 	}
 }
 
