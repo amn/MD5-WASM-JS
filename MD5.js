@@ -60,7 +60,7 @@ export class Worker extends globalThis.Worker {
 	 */
 	async digest(input, { signal } = {}) {
 		const channel = new MessageChannel(); /// Create a bi-directional channel to use as RPC for the worker to communicate back the result of digesting the blob
-		const result_promise = new Promise(resolve => { channel.port1.onmessage = ev => resolve(ev.data); }); /// Create the promise that resolves with the result
+		const result_promise = new Promise((resolve, reject) => { channel.port1.onmessage = ev => (Error.isError(ev.data) ? reject : resolve)(ev.data); }); /// Create the promise that resolves with the result or rejects with the error (if the RPC threw an exception)
 		this.postMessage(input, [ input, channel.port2 ]); /// RPC-call the `digest` procedure -- a worker is expected to execute it
 		const result = await Promise.race([ /// Wait for the return value from the RPC call (which happens in another thread) or abort if signalled
 			result_promise,
