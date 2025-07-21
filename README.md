@@ -22,9 +22,11 @@ make -f ~/path/to/the/makefile
 
 The `MD5.js` module is designed to be [imported](http://tc39.es/ecma262/multipage/ecmascript-language-scripts-and-modules.html#sec-imports), e.g. with a statement like `import "./MD5.js";`.
 
-It currently exports a single procedure for [MD5](http://en.wikipedia.org/wiki/MD5) computation: `digest`. The procedure is designed to support computing of a digest of any kind of data that can be represented by object that [iterates](http://tc39.es/ecma262/#sec-iteration) over `ArrayBuffer` objects (in context of the computation referred to as "chunks" [of the data]). Put another way, if your data can be represented by an *iterable* series of `ArrayBuffer` objects, the `digest` procedure can use it. As should be familiar, every `Array` is iterable, and so is every *iterator* object returned by a [generator function](http://tc39.es/ecma262/multipage/control-abstraction-objects.html#sec-generator-objects); otherwise any kind of object of your design will do as long as it conforms to the iterator protocol. The rule of thumb for determining if an object is suitable here, is: if it can be used in a `for await(... of ...)` or `for(... of ...)` loop, it is suitable for `digest`.
+The module exports two constructs for computing MD5 signatures, where one depends on the other -- a procedure that computes on the same thread it is invoked on, and a method that defers computation (through employing the former procedure in turn) to a dedicated [worker](https://html.spec.whatwg.org/multipage/workers.html#dedicated-workers-and-the-worker-interface) which executes its own thread.
 
-# Examples of use
+### The module-level `digest` procedure
+
+The exported `digest` procedure implements [MD5](http://en.wikipedia.org/wiki/MD5) computation "directly" -- when called by a script computation is done chunk by chunk in the script's execution context as it is called (same thread a Web page runs on, if the script is hosted by a Web page). The procedure is designed to support computing of a digest of any kind of data that can be represented by object that [iterates](http://tc39.es/ecma262/#sec-iteration) over `ArrayBuffer` objects (in context of the computation referred to as "chunks" [of the data]). Put another way, if your data can be represented by an *iterable* series of `ArrayBuffer` objects, the `digest` procedure can use it. As should be familiar, every `Array` is iterable, and so is every *iterator* object returned by a [generator function](http://tc39.es/ecma262/multipage/control-abstraction-objects.html#sec-generator-objects); otherwise any kind of object of your design will do as long as it conforms to the iterator protocol. The rule of thumb for determining if an object is suitable here, is: if it can be used in a `for await(... of ...)` or `for(... of ...)` loop, it is suitable for `digest`.You can, for example, provide a `ReadableStream` as `chunks` to `digest`, because `ReadableStream` is iterable.
 
 Below is a function that calls the `digest` procedure to compute a digest of a potentially very large (for computer memory) blob of data it is passed, typically a large file "on disk". Because computation necessarily blocks the execution of the script, "chunking" the file into sufficiently large chunks will have the effect of suspending execution in a manner where the user agent won't tend to related elements, like interactive elements of the Web page when attempted clicked or otherwise interacted with by the user. For this reason, the function computes chunks of such size as to always keep a minimum "frame rate" -- adjusting the chunk size according to how fast or slow the last chunk was assumed to be processed. With a preset ideal processing time, arbitrarily large streams of data can be processed by a single script execution thread without aforementioned detriment to things like UI elements etc.
 
@@ -73,3 +75,13 @@ async function compute_MD5_of_a_file(file, progress, { ideal_chunk_process_time 
 ```
 
 Different kinds of data will probably warrant a slightly or very different approach.
+
+### The `Worker`-assisted `digest` method
+
+The module exports a `Worker` sub-class that exposes a `digest` method which defers computation, through the aforementioned, module-level `digest` procedure, on a _dedicated_ thread. See documentation of the exported `Worker` class. For a trivial example, below constructs a `Worker` and executes computation with a given buffer size of 8 megabytes per chunk (definitions `chunked` and `file` are taken from the example above, for tersity and for comparison):
+
+```javascrtipt
+import { Worker } from "./MD5.js";
+
+const result = await new Worker().digest(chunked(file, 8 * 1024 * 1024, { map: blob => blob.arrayBuffer() })); /// `result` is a view onto the array that represents the computed MD5 signature
+```
